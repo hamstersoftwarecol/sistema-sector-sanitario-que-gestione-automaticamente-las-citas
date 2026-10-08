@@ -1,0 +1,184 @@
+// Esquema de datos de MediCita IA.
+// Tras cualquier cambio: `npm run db:migrate` (desarrollo) y `npm run db:generate`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingSource {
+  MANUAL
+  AI_ASSISTANT
+}
+
+enum PlanTier {
+  FREE
+  PRO
+  CLINIC
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(PATIENT)
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  doctorProfile DoctorProfile?
+  appointments  Appointment[]    @relation("PatientAppointments")
+  aiUsage       AiUsage[]
+  conversations AiConversation[]
+}
+
+model Specialty {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  name        String          @unique
+  description String
+  doctors     DoctorProfile[]
+}
+
+model DoctorProfile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  specialtyId         String
+  bio                 String?
+  licenseNumber       String?
+  timezone            String   @default("America/Bogota")
+  slotDurationMinutes Int      @default(30)
+  // Si es false, las citas nuevas quedan PENDING hasta que el médico las confirme.
+  autoConfirm         Boolean  @default(true)
+  stripeCustomerId    String?  @unique
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty    Specialty          @relation(fields: [specialtyId], references: [id])
+  availability AvailabilityRule[]
+  timeOff      TimeOff[]
+  appointments Appointment[]
+  subscription Subscription?
+
+  @@index([specialtyId])
+}
+
+// Franja semanal recurrente en la zona horaria del médico.
+// Los minutos se cuentan desde la medianoche local (540 = 09:00).
+model AvailabilityRule {
+  id          String @id @default(cuid())
+  doctorId    String
+  dayOfWeek   Int // 0 = domingo … 6 = sábado
+  startMinute Int
+  endMinute   Int
+
+  doctor DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, dayOfWeek])
+}
+
+model TimeOff {
+  id       String   @id @default(cuid())
+  doctorId String
+  startsAt DateTime
+  endsAt   DateTime
+  reason   String?
+
+  doctor DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, startsAt])
+}
+
+model Appointment {
+  id                 String            @id @default(cuid())
+  patientId          String
+  doctorId           String
+  startsAt           DateTime
+  endsAt             DateTime
+  status             AppointmentStatus @default(CONFIRMED)
+  source             BookingSource     @default(MANUAL)
+  reason             String
+  // Resumen pre-consulta redactado por el asistente de IA a partir de lo que contó el paciente.
+  aiSummary          String?
+  doctorNotes        String?
+  cancellationReason String?
+  cancelledAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  patient User          @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor  DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  // Además existe un índice único parcial (doctorId, startsAt) WHERE status <> 'CANCELLED'
+  // definido en SQL dentro de la migración inicial para impedir dobles reservas.
+  @@index([doctorId, startsAt])
+  @@index([patientId, startsAt])
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  doctorId             String    @unique
+  plan                 PlanTier  @default(FREE)
+  // Estado tal como lo reporta Stripe: active, trialing, past_due, canceled, …
+  status               String
+  stripeSubscriptionId String?   @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  doctor DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+// Contador diario de mensajes al asistente de IA, para limitar costes por usuario.
+model AiUsage {
+  id     String @id @default(cuid())
+  userId String
+  day    String // YYYY-MM-DD (UTC)
+  count  Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+}
+
+// Conversación con el asistente de IA (incluye llamadas a herramientas) para mantener el contexto entre turnos.
+model AiConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+// Eventos de Stripe ya procesados (idempotencia del webhook).
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+}

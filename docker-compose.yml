@@ -1,0 +1,21 @@
+# PostgreSQL local para desarrollo: `docker compose up -d`
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: salud
+      POSTGRES_PASSWORD: salud
+      POSTGRES_DB: medicita
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salud -d medicita"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

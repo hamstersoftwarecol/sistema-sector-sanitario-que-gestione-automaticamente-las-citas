@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@theme {
+  --color-brand-50: #effcf9;
+  --color-brand-100: #c9f7ec;
+  --color-brand-200: #94eedb;
+  --color-brand-300: #57ddc5;
+  --color-brand-400: #26c2ab;
+  --color-brand-500: #0ea593;
+  --color-brand-600: #088578;
+  --color-brand-700: #0b6a61;
+  --color-brand-800: #0e544e;
+  --color-brand-900: #114641;
+  --color-brand-950: #032a28;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
+
+/* Animación del indicador "escribiendo…" del asistente. */
+@keyframes typing {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot {
+  animation: typing 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
